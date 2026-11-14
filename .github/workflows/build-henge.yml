@@ -38,6 +38,19 @@ jobs:
         with:
           path: Henge
 
+      - name: Shim the header the iPhoneOS 27.1 SDK asks for
+        run: |
+          set -euxo pipefail
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          H="$SDK/System/Library/Frameworks/Foundation.framework/Headers/NSURLHandle.h"
+          if [ ! -e "$H" ]; then
+            printf '#ifndef HENGE_NSURLHANDLE_SHIM\n#define HENGE_NSURLHANDLE_SHIM\n#endif\n' | sudo tee "$H" >/dev/null
+            echo "SHIMMED $H"
+          else
+            echo "ALREADY THERE $H"
+          fi
+          ls -l "$H"
+
       # fetch_deps.sh copies prebuilt pieces out of a BUILT Husk checkout:
       # StikJIT.xcframework (vendored in Husk's repo, comes with checkout),
       # libhusk_rppairing.a (scripts/build_rppairing_ios.sh) and the
