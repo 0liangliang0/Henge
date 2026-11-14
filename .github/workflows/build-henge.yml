@@ -38,18 +38,24 @@ jobs:
         with:
           path: Henge
 
-      - name: Shim the header the iPhoneOS 27.1 SDK asks for
+      - name: Prefer a working Xcode and inspect the iOS SDK
         run: |
           set -euxo pipefail
+          echo "== Xcodes on this image =="
+          ls -d /Applications/Xcode*.app || true
+          for xc in /Applications/Xcode_27.app /Applications/Xcode_27.0.app; do
+            if [ -d "$xc" ]; then sudo xcode-select -s "$xc"; echo "SELECTED $xc"; break; fi
+          done
+          xcodebuild -version || true
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          H="$SDK/System/Library/Frameworks/Foundation.framework/Headers/NSURLHandle.h"
-          if [ ! -e "$H" ]; then
-            printf '#ifndef HENGE_NSURLHANDLE_SHIM\n#define HENGE_NSURLHANDLE_SHIM\n#endif\n' | sudo tee "$H" >/dev/null
-            echo "SHIMMED $H"
-          else
-            echo "ALREADY THERE $H"
+          echo "== SDK: $SDK =="
+          H="$SDK/System/Library/Frameworks/Foundation.framework/Headers"
+          ls "$H" | wc -l
+          ls "$H" | grep -E 'NSGeometry\.h|NSURLHandle\.h|NSKeyedArchiver\.h' || echo "MISSING SOME HEADERS"
+          if [ ! -e "$H/NSURLHandle.h" ]; then
+            printf '#ifndef HENGE_NSURLHANDLE_SHIM\n#define HENGE_NSURLHANDLE_SHIM\n#endif\n' | sudo tee "$H/NSURLHandle.h" >/dev/null
+            echo "SHIMMED NSURLHandle.h"
           fi
-          ls -l "$H"
 
       # fetch_deps.sh copies prebuilt pieces out of a BUILT Husk checkout:
       # StikJIT.xcframework (vendored in Husk's repo, comes with checkout),
