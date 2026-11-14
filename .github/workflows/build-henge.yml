@@ -86,3 +86,9 @@ jobs:
           name: Henge-tipa-${{ github.sha }}
           path: /Users/runner/Desktop/Henge.tipa
           if-no-files-found: error
+      - name: Dump the Xcode build log
+        if: failure()
+        working-directory: Henge
+        run: |
+          ls -l ios/build/DerivedData.buildlog || true
+          tail -n 600 ios/build/DerivedData.buildlog || true
