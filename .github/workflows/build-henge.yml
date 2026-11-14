@@ -1,35 +1,15 @@
-# .github/workflows/build-henge.yml
-#
-# Builds a Henge.ipa from your fork's main branch on a GitHub-hosted macOS
-# runner, no Mac needed. Free on a PUBLIC repo: public repos get unlimited
-# minutes on hosted runners, including macOS. On a private repo, macOS minutes
-# bill at 10x, so the free tier's ~2000 min/month is only ~200 macOS minutes.
-#
-# The IPA comes out unsigned with ad-hoc signing (package_ipa.sh's normal
-# output). SideStore/AltStore re-signs it with your certificate on install
-# and keeps the entitlements it can; increased-memory-limit only survives if
-# your certificate carries it, and Henge falls back to file-backed guest RAM
-# without it.
-
 name: Build Henge IPA
 
-# Manual only (Actions tab > Build Henge IPA > Run workflow): pushes to main don't build an IPA.
 on:
   workflow_dispatch: {}
 
 env:
   HUSK: ${{ github.workspace }}/Husk
-  # The Makefile takes its slirp headers from IOS_DEPS, not HUSK:
-  #   IOS_DEPS ?= $(HOME)/Documents/Coding/Husk/build/ios-arm64/sysroot
-  # (HUSK is only read by ios/scripts/fetch_deps.sh.)
   IOS_DEPS: ${{ github.workspace }}/Husk/build/ios-arm64/sysroot
 
 jobs:
   build:
-    # Xcode 27 image (arm64, GA since Oct 2026). Plain `xcode-27` is a standard
-    # runner, so it's free on public repos; `xcode-27-xlarge` is a paid larger
-    # runner. Table: https://github.com/actions/runner-images#available-images
-    runs-on: xcode-27
+    runs-on: macos-26
     timeout-minutes: 120
 
     steps:
@@ -38,29 +18,6 @@ jobs:
         with:
           path: Henge
 
-      - name: Prefer a working Xcode and inspect the iOS SDK
-        run: |
-          set -euxo pipefail
-          echo "== Xcodes on this image =="
-          ls -d /Applications/Xcode*.app || true
-          for xc in /Applications/Xcode_27.app /Applications/Xcode_27.0.app; do
-            if [ -d "$xc" ]; then sudo xcode-select -s "$xc"; echo "SELECTED $xc"; break; fi
-          done
-          xcodebuild -version || true
-          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          echo "== SDK: $SDK =="
-          H="$SDK/System/Library/Frameworks/Foundation.framework/Headers"
-          ls "$H" | wc -l
-          ls "$H" | grep -E 'NSGeometry\.h|NSURLHandle\.h|NSKeyedArchiver\.h' || echo "MISSING SOME HEADERS"
-          if [ ! -e "$H/NSURLHandle.h" ]; then
-            printf '#ifndef HENGE_NSURLHANDLE_SHIM\n#define HENGE_NSURLHANDLE_SHIM\n#endif\n' | sudo tee "$H/NSURLHandle.h" >/dev/null
-            echo "SHIMMED NSURLHandle.h"
-          fi
-
-      # fetch_deps.sh copies prebuilt pieces out of a BUILT Husk checkout:
-      # StikJIT.xcframework (vendored in Husk's repo, comes with checkout),
-      # libhusk_rppairing.a (scripts/build_rppairing_ios.sh) and the
-      # libslirp/glib/intl/pcre2 static libs (scripts/build_ios.sh).
       - name: Check out Husk
         uses: actions/checkout@v4
         with:
@@ -79,23 +36,15 @@ jobs:
         run: |
           set -euxo pipefail
           brew install xcodegen meson ninja pkg-config
-          # Runner images ship rustup; add the iOS target if it's missing.
           rustup target add aarch64-apple-ios || {
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             rustup target add aarch64-apple-ios
           }
 
-      # build_ios.sh builds from third_party/build/<name>; the sources are
-      # fetched by fetch_sources.sh, which Husk's own ci_build.sh runs first.
       - name: Fetch Husk's third-party sources
         working-directory: Husk
         run: bash scripts/fetch_sources.sh
 
-      # Henge only needs these three sysroot pieces: libffi (a glib dep),
-      # glib (whose meson subprojects also produce libpcre2-8 and libintl),
-      # and libslirp (the guest network). Skip Husk's pixman/libucontext/qemu
-      # stages entirely: that's the Android emulator, minutes instead of an
-      # hour-plus.
       - name: Build the iOS libraries Henge needs
         working-directory: Husk
         run: bash scripts/build_ios.sh libffi glib libslirp
